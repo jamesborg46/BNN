@@ -32,72 +32,37 @@ class DenseVariational(nn.Module):
         self.weight_rho = nn.Parameter(
             torch.Tensor(out_features, in_features))
 
-        self.register_buffer(
-            'weight_sigma',
-            torch.log(1 + torch.exp(self.weight_rho))
-        )
-
-        self.weight_dist = torch.distributions.Normal(
-            self.weight_mu,
-            self.weight_sigma,
-        )
-
-        self.register_buffer(
-            'weight_signal_to_noise',
-            torch.abs(self.weight_mu) / self.weight_sigma
-        )
-
-        self.register_buffer(
-            'weight_entropy',
-            0.5 + 0.5 * math.log(2 * math.pi) + torch.log(self.weight_sigma)
-        )
-
         if bias:
-            self.bias_mu = nn.Parameter(torch.Tensor(out_features))
-            self.bias_rho = nn.Parameter(torch.Tensor(out_features))
+            self.bias_mu = nn.Parameter(torch.Tensor(out_features).cuda())
+            self.bias_rho = nn.Parameter(torch.Tensor(out_features).cuda())
 
-            self.register_buffer(
-                'bias_sigma',
-                torch.log(1 + torch.exp(self.bias_rho))
-            )
-
-            self.bias_dist = torch.distributions.Normal(
-                self.bias_mu,
-                self.bias_sigma
-            )
-
-            self.register_buffer(
-                'bias_signal_to_noise',
-                torch.abs(self.bias_mu) / self.bias_sigma
-            )
-
-            self.register_buffer(
-                'bias_entropy',
-                0.5 + 0.5 * math.log(2 * math.pi) + torch.log(self.bias_sigma)
-            )
         else:
             self.register_parameter('bias_mu', None)
             self.register_parameter('bias_rho', None)
-            self.register_buffer('bias_sigma', None)
-            self.register_buffer('bias_signal_to_noise', None)
-            self.register_buffer('bias_entropy', None)
-            self.bias_dist = None
 
         self.reset_parameters()
 
     def reset_parameters(self):
         init.kaiming_uniform_(self.weight_mu, a=math.sqrt(5))
-        init.kaiming_uniform_(self.weight_std, a=math.sqrt(5))
-        if self.bias_dist is not None:
+        init.kaiming_uniform_(self.weight_rho, a=math.sqrt(5))
+        if self.bias_mu is not None:
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight_mu)
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias_mu, -bound, bound)
-            init.uniform_(self.bias_std, -bound, bound)
+            init.uniform_(self.bias_rho, -bound, bound)
 
     def forward(self, input):
-        weight = self.weight_dist.rsample()
-        if self.bist_dist is not None:
-            bias = self.bias_dist.rsample()
+        self.weight_sigma = torch.log(1 + torch.exp(self.weight_rho))
+        weight = (torch.distributions
+                       .Normal(self.weight_mu, self.weight_sigma)
+                       .rsample())
+
+        if self.bias_mu is not None:
+            self.bias_sigma = torch.log(1 + torch.exp(self.bias_rho))
+            bias = (torch.distributions
+                         .Normal(self.bias_mu, self.bias_sigma)
+                         .rsample())
+
             return F.linear(input, weight, bias)
         else:
             return F.linear(input, weight, None)
@@ -109,11 +74,12 @@ class DenseVariational(nn.Module):
             + math.log(weight_prior_sigma**2)
         )
 
-        bias_kl_loss = 0.5 * torch.sum(
-            (self.bias_mu + self.bias_sigma**2) / (bias_prior_sigma**2)
-            - 1 - torch.log(self.bias_sigma**2)
-            + math.log(bias_prior_sigma**2)
-        )
+        if self.bias_mu is not None:
+            bias_kl_loss = 0.5 * torch.sum(
+                (self.bias_mu + self.bias_sigma**2) / (bias_prior_sigma**2)
+                - 1 - torch.log(self.bias_sigma**2)
+                + math.log(bias_prior_sigma**2)
+            )
 
         return weight_kl_loss + bias_kl_loss
 
@@ -121,14 +87,16 @@ class DenseVariational(nn.Module):
 class BayesianNN(nn.Module):
 
     def __init__(self,
-                 in_features,
-                 out_features,
                  weight_prior_sigma,
                  bias_prior_sigma,
                  activation_function=None):
 
         super(BayesianNN, self).__init__()
-        self.dense_variational_1 = DenseVariational(in_features, 1200)
+
+        self.weight_prior_sigma = weight_prior_sigma
+        self.bias_prior_sigma = bias_prior_sigma
+
+        self.dense_variational_1 = DenseVariational(784, 1200)
         self.dense_variational_2 = DenseVariational(1200, 1200)
         self.dense_variational_3 = DenseVariational(1200, 10)
         if activation_function is None:
@@ -137,7 +105,8 @@ class BayesianNN(nn.Module):
             self.activation_function = activation_function
 
     def forward(self, input):
-        x = self.activation_function(self.dense_variational_1(input))
+        x = torch.flatten(input, 1)
+        x = self.activation_function(self.dense_variational_1(x))
         x = self.activation_function(self.dense_variational_2(x))
         x = self.activation_function(self.dense_variational_3(x))
         return x
@@ -159,9 +128,11 @@ def train(model, device, train_loader, optimizer, epoch, samples=1):
         dataset_size = len(train_loader.dataset)
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
+
         average_complexity_cost = 0
         average_likelihood_cost = 0
         average_loss = 0
+
         for _ in range(samples):
             pred = model(data)
             complexity_cost = model.kl_loss()
@@ -171,7 +142,7 @@ def train(model, device, train_loader, optimizer, epoch, samples=1):
             loss = (1/samples) * (
                 (1/dataset_size) * complexity_cost + likelihood_cost
             )
-            loss.backward()
+            loss.backward(retain_graph=True)
 
             average_complexity_cost += (1/samples) * complexity_cost
             average_likelihood_cost += (1/samples) * likelihood_cost
@@ -223,7 +194,7 @@ def main():
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--test-batch-size', type=int, default=1000)
     parser.add_argument('--epochs', type=int, default=500)
-    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--custom-init', action='store_true', default=False)
     parser.add_argument('--weight-mu-init', type=float, default=0.01)
     parser.add_argument('--weight-rho-init', type=float, default=0.01)
@@ -280,9 +251,12 @@ def main():
     logger.info("Training set size: {}".format(len(train_loader.dataset)))
     logger.info("Test set size: {}".format(len(test_loader.dataset)))
 
-    model = BayesianNN().to(device)
+    model = BayesianNN(
+        weight_prior_sigma=args.weight_prior,
+        bias_prior_sigma=args.bias_prior,
+    ).to(device)
 
-    optimizer = optim.Adagrad(lr=args.lr)
+    optimizer = optim.Adagrad(params=model.parameters(), lr=args.lr)
 
     wandb.watch(model, log="all")
 
@@ -290,7 +264,7 @@ def main():
         if isinstance(m, DenseVariational):
             init.normal_(m.weight_mu, 0.0, args.weight_mu_init)
             init.normal_(m.weight_rho, 0.0, args.weight_rho_init)
-            if m.bias_dist is not None:
+            if m.bias_mu is not None:
                 init.normal_(m.bias_mu, 0.0, args.bias_mu_init)
                 init.normal_(m.bias_rho, 0.0, args.bias_rho_init)
 
