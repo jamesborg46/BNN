@@ -8,6 +8,7 @@ from torchvision import datasets
 from torchvision import transforms
 
 import datetime
+import time
 import argparse
 import math
 
@@ -119,7 +120,7 @@ class BayesianNN(nn.Module):
         return kl_loss
 
 
-def train(model, device, train_loader, optimizer, epoch, samples=1):
+def train(model, device, train_loader, optimizer, epoch, samples=3):
     model.train()
     num_training_steps = 0
 
@@ -140,14 +141,15 @@ def train(model, device, train_loader, optimizer, epoch, samples=1):
                                               target,
                                               reduction='mean')
             loss = (1/samples) * (
-                (1/dataset_size) * complexity_cost + likelihood_cost
+                (1/dataset_size) * complexity_cost
+                + likelihood_cost
             )
-            loss.backward(retain_graph=True)
 
-            average_complexity_cost += (1/samples) * complexity_cost
+            average_complexity_cost += (1/samples) * (1/dataset_size) * complexity_cost
             average_likelihood_cost += (1/samples) * likelihood_cost
             average_loss += loss
 
+        average_loss.backward()
         optimizer.step()
 
         num_training_steps += batch_size
@@ -206,6 +208,7 @@ def main():
     parser.add_argument('--bias-rho-scale-init', type=float, default=0.1)
     parser.add_argument('--weight-prior', type=float, default=0.1)
     parser.add_argument('--bias-prior', type=float, default=0.1)
+    parser.add_argument('--samples', type=int, default=3)
     parser.add_argument('--pre-normalization',
                         action='store_true', default=False)
 
@@ -252,6 +255,16 @@ def main():
         num_workers=8,
     )
 
+
+    example_test_loader = torch.utils.data.DataLoader(
+        validation_data,
+        batch_size=5,
+        shuffle=True,
+        num_workers=1,
+    )
+
+    example_test = iter(example_test_loader)
+
     logger.info("Training set size: {}".format(len(train_loader.dataset)))
     logger.info("Test set size: {}".format(len(test_loader.dataset)))
 
@@ -260,7 +273,7 @@ def main():
         bias_prior_sigma=args.bias_prior,
     ).to(device)
 
-    optimizer = optim.Adagrad(params=model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(params=model.parameters(), lr=args.lr)
 
     wandb.watch(model, log="all")
 
@@ -290,17 +303,34 @@ def main():
                                         device,
                                         train_loader,
                                         optimizer,
-                                        epoch)
+                                        epoch,
+                                        samples=args.samples,
+                                        )
 
         test_loss, test_accuracy = test(model, device, test_loader, epoch)
 
         with torch.no_grad():
+
+            example_data, example_target = example_test.next()
+            example_logits = model(example_data.to(device))
+            example_preds = torch.argmax(example_logits, 1)
+            example_softmax = F.softmax(example_logits, dim=1)
+
             wandb.log(
                 {"train_loss": train_loss,
                  "train_complexity_cost": train_complexity_cost,
                  "train_likelihood_cost": train_likelihood_cost,
                  "test_loss": test_loss,
                  "test_accuracy": test_accuracy,
+                 "example_imgs":
+                     [wandb.Image(
+                         example_data[i],
+                         caption="Pred: {}\n Probs: {}\n Logits: {}"
+                         .format(example_preds[i],
+                                 str(example_softmax[i].cpu()),
+                                 str(example_logits[i].cpu()))
+                     ) for i in range(len(example_data))],
+                 # "example_logits": example_logits.cpu(),
                  "epoch": epoch+1
                  })
 
