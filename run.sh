@@ -1,8 +1,18 @@
 python ./bnn.py \
-    --name EXP_1 \
+    --name EXP_2 \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
     --lr 0.003 \
     --custom-init \
+    --weight-mu-mean-init 0.0 \
+    --weight-mu-scale-init 0.01 \
+    --weight-rho-mean-init -4.0 \
+    --weight-rho-scale-init 0.001 \
+    --bias-mu-mean-init 0.0 \
+    --bias-mu-scale-init 0.01 \
+    --bias-rho-mean-init -4.0 \
+    --bias-rho-scale-init 0.001 \
+    --weight-prior 0.01 \
+    --bias-prior 0.1 \
     --pre-normalization \

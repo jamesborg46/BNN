@@ -196,12 +196,16 @@ def main():
     parser.add_argument('--epochs', type=int, default=500)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--custom-init', action='store_true', default=False)
-    parser.add_argument('--weight-mu-init', type=float, default=0.01)
-    parser.add_argument('--weight-rho-init', type=float, default=0.01)
-    parser.add_argument('--bias-mu-init', type=float, default=0.01)
-    parser.add_argument('--bias-rho-init', type=float, default=0.01)
-    parser.add_argument('--weight-prior', type=float, default=0.001)
-    parser.add_argument('--bias-prior', type=float, default=0.3)
+    parser.add_argument('--weight-mu-mean-init', type=float, default=0.1)
+    parser.add_argument('--weight-mu-scale-init', type=float, default=0.1)
+    parser.add_argument('--weight-rho-mean-init', type=float, default=0.1)
+    parser.add_argument('--weight-rho-scale-init', type=float, default=0.1)
+    parser.add_argument('--bias-mu-mean-init', type=float, default=0.1)
+    parser.add_argument('--bias-mu-scale-init', type=float, default=0.1)
+    parser.add_argument('--bias-rho-mean-init', type=float, default=0.1)
+    parser.add_argument('--bias-rho-scale-init', type=float, default=0.1)
+    parser.add_argument('--weight-prior', type=float, default=0.1)
+    parser.add_argument('--bias-prior', type=float, default=0.1)
     parser.add_argument('--pre-normalization',
                         action='store_true', default=False)
 
@@ -262,11 +266,19 @@ def main():
 
     def weights_init(m):
         if isinstance(m, DenseVariational):
-            init.normal_(m.weight_mu, 0.0, args.weight_mu_init)
-            init.normal_(m.weight_rho, 0.0, args.weight_rho_init)
+            init.normal_(m.weight_mu,
+                         args.weight_mu_mean_init,
+                         args.weight_mu_scale_init)
+            init.normal_(m.weight_rho,
+                         args.weight_rho_mean_init,
+                         args.weight_rho_scale_init)
             if m.bias_mu is not None:
-                init.normal_(m.bias_mu, 0.0, args.bias_mu_init)
-                init.normal_(m.bias_rho, 0.0, args.bias_rho_init)
+                init.normal_(m.bias_mu,
+                             args.bias_mu_mean_init,
+                             args.bias_mu_scale_init)
+                init.normal_(m.bias_rho,
+                             args.bias_rho_mean_init,
+                             args.bias_rho_scale_init)
 
     if args.custom_init:
         model.apply(weights_init)
