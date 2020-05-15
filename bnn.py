@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from torchvision import datasets
 from torchvision import transforms
 
+import matplotlib.pyplot as plt
+
 import datetime
 import time
 import argparse
@@ -118,6 +120,20 @@ class BayesianNN(nn.Module):
             kl_loss += child.kl_loss(self.weight_prior_sigma,
                                      self.bias_prior_sigma)
         return kl_loss
+
+    def sample(self, input, num_samples):
+        samples = []
+        logits = []
+        for _ in range(num_samples):
+            x = self.forward(input)
+            logits.append(x)
+            x = F.softmax(x, dim=1)
+            samples.append(x)
+        samples = torch.stack(samples)
+        samples = torch.transpose(samples, 0, 1)
+        logits = torch.mean(torch.stack(logits), dim=1)
+        print(samples.shape)
+        return samples, logits
 
 
 def train(model, device, train_loader, optimizer, epoch, samples=3):
@@ -271,6 +287,7 @@ def main():
     model = BayesianNN(
         weight_prior_sigma=args.weight_prior,
         bias_prior_sigma=args.bias_prior,
+        activation_function=F.elu
     ).to(device)
 
     optimizer = optim.Adam(params=model.parameters(), lr=args.lr)
@@ -312,9 +329,22 @@ def main():
         with torch.no_grad():
 
             example_data, example_target = example_test.next()
-            example_logits = model(example_data.to(device))
-            example_preds = torch.argmax(example_logits, 1)
-            example_softmax = F.softmax(example_logits, dim=1)
+            example_samples, example_logits = model.sample(example_data.to(device), 30)
+            # example_preds = torch.argmax(example_logits, 1)
+            # example_softmax = F.softmax(example_logits, dim=1)
+
+            plts = []
+            for i, example in enumerate(example_data):
+                fig, (ax1, ax2) = plt.subplots(2,
+                                               figsize=(4, 8),
+                                               gridspec_kw={
+                                                   'height_ratios': [2, 1]
+                                               })
+                ax1.imshow(example[0], cmap="gray")
+                ax2.violinplot(example_samples.cpu().numpy()[i],
+                               showmeans=True)
+                ax2.set_ylim([0, 1])
+                plts.append(fig)
 
             wandb.log(
                 {"train_loss": train_loss,
@@ -322,18 +352,25 @@ def main():
                  "train_likelihood_cost": train_likelihood_cost,
                  "test_loss": test_loss,
                  "test_accuracy": test_accuracy,
-                 "example_imgs":
-                     [wandb.Image(
-                         example_data[i],
-                         caption="Pred: {}\n Probs: {}\n Logits: {}"
-                         .format(example_preds[i],
-                                 str(example_softmax[i].cpu()),
-                                 str(example_logits[i].cpu()))
-                     ) for i in range(len(example_data))],
+                 "example_imgs": [wandb.Image(
+                     fig,
+                     # caption="Logits: {}, Probs: {}".format(
+                     #     str(example_logits.cpu()[i]),
+                     #     str(example_samples.cpu()[i])
+                     # )
+                 ) for fig in plts],
+                 # "example_imgs":
+                 #     [wandb.Image(
+                 #         example_data[i],
+                 #         caption="Pred: {}\n Probs: {}\n Logits: {}"
+                 #         .format(example_preds[i],
+                 #                 str(example_softmax[i].cpu()),
+                 #                 str(example_logits[i].cpu()))
+                 #     ) for i in range(len(example_data))],
                  # "example_logits": example_logits.cpu(),
                  "epoch": epoch+1
                  })
-
+            plt.close('all')
 
 if __name__ == '__main__':
     main()
