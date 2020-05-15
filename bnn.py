@@ -130,10 +130,10 @@ class BayesianNN(nn.Module):
             x = F.softmax(x, dim=1)
             samples.append(x)
         samples = torch.stack(samples)
+        preds = torch.mean(samples, dim=0)
         samples = torch.transpose(samples, 0, 1)
-        logits = torch.mean(torch.stack(logits), dim=1)
-        print(samples.shape)
-        return samples, logits
+        logits = torch.stack(logits)
+        return preds, {"sampled_probs": samples, "sampled_logits": logits}
 
 
 def train(model, device, train_loader, optimizer, epoch, samples=3):
@@ -189,21 +189,22 @@ def test(model, device, test_loader, epoch):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            pred = model(data)
-            complexity_cost = model.kl_loss()
-            likelihood_cost = F.cross_entropy(pred,
-                                              target,
-                                              reduction='mean')
-            loss += (1/num_batches) * (
-                (1/dataset_size) * complexity_cost + likelihood_cost
-            )
+            pred, info = model.sample(data, 50)
+            # complexity_cost = model.kl_loss()
+            # likelihood_cost = F.cross_entropy(pred,
+            #                                   target,
+            #                                   reduction='mean')
+            # loss += (1/num_batches) * (
+            #     (1/dataset_size) * complexity_cost + likelihood_cost
+            # )
             correct += (torch.argmax(pred, 1) == target).sum().item()
             total += len(data)
 
     test_accuracy = 100 * (correct / total)
     logger.info('Test set: Average loss: {:.4f}\n Accuracy: {:.4f}'
                 .format(test_loss, test_accuracy))
-    return loss, test_accuracy
+    # return loss, test_accuracy
+    return test_accuracy
 
 
 def main():
@@ -324,12 +325,14 @@ def main():
                                         samples=args.samples,
                                         )
 
-        test_loss, test_accuracy = test(model, device, test_loader, epoch)
+        # test_loss, test_accuracy = test(model, device, test_loader, epoch)
+        test_accuracy = test(model, device, test_loader, epoch)
 
         with torch.no_grad():
 
             example_data, example_target = example_test.next()
-            example_samples, example_logits = model.sample(example_data.to(device), 30)
+            pred, info = model.sample(example_data.to(device), 30)
+            example_samples = info["sampled_probs"]
             # example_preds = torch.argmax(example_logits, 1)
             # example_softmax = F.softmax(example_logits, dim=1)
 
@@ -342,6 +345,7 @@ def main():
                                                })
                 ax1.imshow(example[0], cmap="gray")
                 ax2.violinplot(example_samples.cpu().numpy()[i],
+                               positions=range(10),
                                showmeans=True)
                 ax2.set_ylim([0, 1])
                 plts.append(fig)
@@ -350,7 +354,7 @@ def main():
                 {"train_loss": train_loss,
                  "train_complexity_cost": train_complexity_cost,
                  "train_likelihood_cost": train_likelihood_cost,
-                 "test_loss": test_loss,
+                 # "test_loss": test_loss,
                  "test_accuracy": test_accuracy,
                  "example_imgs": [wandb.Image(
                      fig,
