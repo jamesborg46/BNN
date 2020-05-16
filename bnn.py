@@ -207,6 +207,26 @@ def test(model, device, test_loader, epoch):
     return test_accuracy
 
 
+def cuda_timer(func, *args, **kwargs):
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+
+    start.record()
+    a = time.time()
+    results = func(*args, **kwargs)
+    b = time.time()
+    end.record()
+
+    torch.cuda.synchronize()
+
+    cuda_time = start.elapsed_time(end) / 1000
+
+    logger.info("CUDA: {} took {} secs to end"
+                .format(func.__name__, cuda_time))
+
+    return results, cuda_time
+
+
 def main():
     parser = argparse.ArgumentParser(description='PyTorch BNN')
     parser.add_argument('--name', type=str, required=True)
@@ -262,7 +282,7 @@ def main():
         train_data,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=8
+        num_workers=4,
     )
 
     test_loader = torch.utils.data.DataLoader(
@@ -271,7 +291,6 @@ def main():
         shuffle=True,
         num_workers=8,
     )
-
 
     example_test_loader = torch.utils.data.DataLoader(
         validation_data,
@@ -317,16 +336,21 @@ def main():
     for epoch in range(args.epochs):
         (train_loss,
          train_complexity_cost,
-         train_likelihood_cost) = train(model,
-                                        device,
-                                        train_loader,
-                                        optimizer,
-                                        epoch,
-                                        samples=args.samples,
-                                        )
+         train_likelihood_cost), train_time = cuda_timer(train,
+                                                         model,
+                                                         device,
+                                                         train_loader,
+                                                         optimizer,
+                                                         epoch,
+                                                         samples=args.samples,
+                                                        )
 
         # test_loss, test_accuracy = test(model, device, test_loader, epoch)
-        test_accuracy = test(model, device, test_loader, epoch)
+        test_accuracy, test_time = cuda_timer(test,
+                                              model,
+                                              device,
+                                              test_loader,
+                                              epoch)
 
         with torch.no_grad():
 
@@ -372,9 +396,12 @@ def main():
                  #                 str(example_logits[i].cpu()))
                  #     ) for i in range(len(example_data))],
                  # "example_logits": example_logits.cpu(),
+                 "train_time": train_time,
+                 "test_time": test_time,
                  "epoch": epoch+1
                  })
             plt.close('all')
+
 
 if __name__ == '__main__':
     main()
