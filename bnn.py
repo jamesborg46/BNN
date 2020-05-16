@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from torchvision import datasets
 from torchvision import transforms
 
+from torchsummary import summary
+
 import matplotlib.pyplot as plt
 
 import datetime
@@ -55,20 +57,23 @@ class DenseVariational(nn.Module):
             init.uniform_(self.bias_rho, -bound, bound)
 
     def forward(self, input):
+        samples, batch_size, units = input.shape
+
         self.weight_sigma = torch.log(1 + torch.exp(self.weight_rho))
+
         weight = (torch.distributions
                        .Normal(self.weight_mu, self.weight_sigma)
-                       .rsample())
+                       .rsample((samples,)))
 
         if self.bias_mu is not None:
             self.bias_sigma = torch.log(1 + torch.exp(self.bias_rho))
             bias = (torch.distributions
                          .Normal(self.bias_mu, self.bias_sigma)
-                         .rsample())
+                         .rsample((samples,)))
 
-            return F.linear(input, weight, bias)
+            return batch_linear(input, weight, bias)
         else:
-            return F.linear(input, weight, None)
+            return batch_linear(input, weight, None)
 
     def kl_loss(self, weight_prior_sigma, bias_prior_sigma):
         weight_kl_loss = 0.5 * torch.sum(
@@ -107,8 +112,9 @@ class BayesianNN(nn.Module):
         else:
             self.activation_function = activation_function
 
-    def forward(self, input):
-        x = torch.flatten(input, 1)
+    def forward(self, input, samples=1):
+        batch, features = input.shape
+        x = input.repeat(samples, 1, 1)
         x = self.activation_function(self.dense_variational_1(x))
         x = self.activation_function(self.dense_variational_2(x))
         x = self.activation_function(self.dense_variational_3(x))
@@ -121,51 +127,59 @@ class BayesianNN(nn.Module):
                                      self.bias_prior_sigma)
         return kl_loss
 
-    def sample(self, input, num_samples):
-        samples = []
-        logits = []
-        for _ in range(num_samples):
-            x = self.forward(input)
-            logits.append(x)
-            x = F.softmax(x, dim=1)
-            samples.append(x)
-        samples = torch.stack(samples)
-        preds = torch.mean(samples, dim=0)
-        samples = torch.transpose(samples, 0, 1)
-        logits = torch.stack(logits)
-        return preds, {"sampled_probs": samples, "sampled_logits": logits}
+    # def sample(self, input, num_samples):
+    #     samples = []
+    #     logits = []
+    #     for _ in range(num_samples):
+    #         x = self.forward(input)
+    #         logits.append(x)
+    #         x = F.softmax(x, dim=1)
+    #         samples.append(x)
+    #     samples = torch.stack(samples)
+    #     preds = torch.mean(samples, dim=0)
+    #     samples = torch.transpose(samples, 0, 1)
+    #     logits = torch.stack(logits)
+    #     return preds, {"sampled_probs": samples, "sampled_logits": logits}
 
 
-def train(model, device, train_loader, optimizer, epoch, samples=3):
+def train(model, device, train_loader, optimizer, epoch, samples=1):
     model.train()
     num_training_steps = 0
 
     for batch_idx, (data, target) in enumerate(train_loader):
         batch_size = len(data)
         dataset_size = len(train_loader.dataset)
+
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
 
-        average_complexity_cost = 0
-        average_likelihood_cost = 0
-        average_loss = 0
+        pred = model(data.flatten(1), samples=samples)
+        complexity_cost = (1 / dataset_size) * model.kl_loss()
+        likelihood_cost = batch_cross_entropy(pred, target, reduction='mean')
+        loss = complexity_cost * likelihood_cost
+        loss.backward()
 
-        for _ in range(samples):
-            pred = model(data)
-            complexity_cost = model.kl_loss()
-            likelihood_cost = F.cross_entropy(pred,
-                                              target,
-                                              reduction='mean')
-            loss = (1/samples) * (
-                (1/dataset_size) * complexity_cost
-                + likelihood_cost
-            )
+        # average_complexity_cost = 0
+        # average_likelihood_cost = 0
+        # average_loss = 0
 
-            average_complexity_cost += (1/samples) * (1/dataset_size) * complexity_cost
-            average_likelihood_cost += (1/samples) * likelihood_cost
-            average_loss += loss
+        # for _ in range(samples):
+        #     pred = model(data)
+        #     complexity_cost = model.kl_loss()
+        #     likelihood_cost = F.cross_entropy(pred,
+        #                                       target,
+        #                                       reduction='mean')
+        #     loss = (1/samples) * (
+        #         (1/dataset_size) * complexity_cost
+        #         + likelihood_cost
+        #     )
 
-        average_loss.backward()
+        #     average_complexity_cost += (1/samples) * (1/dataset_size) * complexity_cost
+        #     average_likelihood_cost += (1/samples) * likelihood_cost
+        #     average_loss += loss
+
+        # average_loss.backward()
+        #
         optimizer.step()
 
         num_training_steps += batch_size
@@ -175,7 +189,7 @@ def train(model, device, train_loader, optimizer, epoch, samples=3):
                         epoch, batch_idx * batch_size, dataset_size,
                         100. * batch_idx / len(train_loader), loss.item()))
 
-    return average_loss, average_complexity_cost, average_likelihood_cost
+    return loss, complexity_cost, likelihood_cost
 
 
 def test(model, device, test_loader, epoch):
@@ -189,7 +203,9 @@ def test(model, device, test_loader, epoch):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            pred, info = model.sample(data, 50)
+            pred = model(data.flatten(1))
+            probs = torch.mean(torch.softmax(pred, dim=-1), dim=0)
+            # pred, info = model.sample(data.flatten(1), 50)
             # complexity_cost = model.kl_loss()
             # likelihood_cost = F.cross_entropy(pred,
             #                                   target,
@@ -197,7 +213,7 @@ def test(model, device, test_loader, epoch):
             # loss += (1/num_batches) * (
             #     (1/dataset_size) * complexity_cost + likelihood_cost
             # )
-            correct += (torch.argmax(pred, 1) == target).sum().item()
+            correct += (torch.argmax(probs, 1) == target).sum().item()
             total += len(data)
 
     test_accuracy = 100 * (correct / total)
@@ -212,9 +228,7 @@ def cuda_timer(func, *args, **kwargs):
     end = torch.cuda.Event(enable_timing=True)
 
     start.record()
-    a = time.time()
     results = func(*args, **kwargs)
-    b = time.time()
     end.record()
 
     torch.cuda.synchronize()
@@ -225,6 +239,21 @@ def cuda_timer(func, *args, **kwargs):
                 .format(func.__name__, cuda_time))
 
     return results, cuda_time
+
+
+def batch_linear(input, weight, bias):
+    return torch.bmm(input, torch.transpose(weight, 1, 2)) + bias.unsqueeze(1)
+
+
+def batch_cross_entropy(input, target, reduction='mean'):
+    samples, batch_size, classes = input.shape
+    # flattening across samples & batches
+    flattened_input = input.flatten(0, 1)
+
+    # Repeating targets to match number of samples
+    repeated_target = target.repeat(samples)
+
+    return F.cross_entropy(flattened_input, repeated_target, reduction=reduction)
 
 
 def main():
@@ -355,8 +384,9 @@ def main():
         with torch.no_grad():
 
             example_data, example_target = example_test.next()
-            pred, info = model.sample(example_data.to(device), 30)
-            example_samples = info["sampled_probs"]
+            pred = model(example_data.to(device).flatten(1), samples=30)
+            # pred, info = model.sample(example_data.to(device).flatten(1), 30)
+            pred_probs = torch.softmax(pred, dim=-1) 
             # example_preds = torch.argmax(example_logits, 1)
             # example_softmax = F.softmax(example_logits, dim=1)
 
@@ -368,7 +398,7 @@ def main():
                                                    'height_ratios': [2, 1]
                                                })
                 ax1.imshow(example[0], cmap="gray")
-                ax2.violinplot(example_samples.cpu().numpy()[i],
+                ax2.violinplot(pred_probs.cpu().numpy()[i],
                                positions=range(10),
                                showmeans=True)
                 ax2.set_ylim([0, 1])
@@ -384,7 +414,7 @@ def main():
                      fig,
                      # caption="Logits: {}, Probs: {}".format(
                      #     str(example_logits.cpu()[i]),
-                     #     str(example_samples.cpu()[i])
+                     #     str(pred_probs.cpu()[i])
                      # )
                  ) for fig in plts],
                  # "example_imgs":
