@@ -386,7 +386,7 @@ def main():
             example_data, example_target = example_test.next()
             pred = model(example_data.to(device).flatten(1), samples=30)
             # pred, info = model.sample(example_data.to(device).flatten(1), 30)
-            pred_probs = torch.softmax(pred, dim=-1) 
+            pred_probs = torch.softmax(pred, dim=-1).transpose(0, 1)
             # example_preds = torch.argmax(example_logits, 1)
             # example_softmax = F.softmax(example_logits, dim=1)
 

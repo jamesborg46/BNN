@@ -1,5 +1,5 @@
 python ./bnn.py \
-    --name EXP_22 \
+    --name EXP_23_NOT_PARRALELIZED \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
@@ -15,5 +15,5 @@ python ./bnn.py \
     --bias-rho-scale-init 0.001 \
     --weight-prior 1 \
     --bias-prior 1 \
-    --samples 5 \
+    --samples 20 \
     --pre-normalization \
