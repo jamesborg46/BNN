@@ -78,13 +78,13 @@ class DenseVariational(nn.Module):
 
     def kl_loss(self, weight_prior_sigma, bias_prior_sigma):
         weight_kl_loss = 0.5 * torch.sum(
-            (self.weight_mu + self.weight_sigma**2) / (weight_prior_sigma**2)
+            (self.weight_mu**2 + self.weight_sigma**2) / (weight_prior_sigma**2)
             - 1 - torch.log(self.weight_sigma**2)
             + math.log(weight_prior_sigma**2)
         )
 
         bias_kl_loss = 0.5 * torch.sum(
-            (self.bias_mu + self.bias_sigma**2) / (bias_prior_sigma**2)
+            (self.bias_mu**2 + self.bias_sigma**2) / (bias_prior_sigma**2)
             - 1 - torch.log(self.bias_sigma**2)
             + math.log(bias_prior_sigma**2)
         )
