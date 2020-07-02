@@ -4,11 +4,6 @@ import torch.nn.functional as F
 from torchvision import datasets
 from torchvision import transforms
 
-# # import matplotlib.pyplot as plt
-# # import plotly.graph_objects as go
-# # from plotly.subplots import make_subplots
-# # import numpy as np
-
 from bnn import BayesianNN
 from utils import cuda_timer
 from train import train, test
@@ -24,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(description='PyTorch BNN')
-    parser.add_argument('--name', type=str, required=True)
+    parser.add_argument('--name', type=str, default="UNAMED")
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--test-batch-size', type=int, default=1000)
     parser.add_argument('--epochs', type=int, default=500)

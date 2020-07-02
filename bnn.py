@@ -2,18 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# from torchvision import datasets
-# from torchvision import transforms
-
-# import matplotlib.pyplot as plt
-# import plotly.graph_objects as go
-# from plotly.subplots import make_subplots
-# import numpy as np
-
 from utils import batch_linear
 
-# import datetime
-# import argparse
 import math
 
 

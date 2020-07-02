@@ -56,6 +56,6 @@ def get_uncertainties(logits):
 
     epistemic = entropy - aleatoric
 
-    return (entropy.tolist(),
-            epistemic.tolist(),
-            aleatoric.tolist())
+    return (entropy,
+            epistemic,
+            aleatoric)
