@@ -1,5 +1,5 @@
 python ./main.py \
-    --name EXP_38 \
+    --name NO_MU_IN_COMPLEXITY \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 500 \
@@ -12,7 +12,7 @@ python ./main.py \
     --bias-mu-scale-init 0.001 \
     --bias-rho-mean-init -7.0 \
     --bias-rho-scale-init 0.001 \
-    --weight-prior 10 \
-    --bias-prior 10 \
-    --samples 5 \
+    --weight-prior 0.1 \
+    --bias-prior 1 \
+    --samples 15 \
     --pre-normalization \
