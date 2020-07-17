@@ -66,17 +66,22 @@ class DenseVariational(nn.Module):
 
         return batch_linear(input, weight, bias)
 
-    def kl_loss(self, weight_prior_sigma, bias_prior_sigma):
+    def kl_loss(self, weight_prior_sigma, bias_prior_sigma, mu_excluded=False):
+        if mu_excluded:
+            weight_mu = 0
+            bias_mu = 0
+        else:
+            weight_mu = self.weight_mu
+            bias_mu = self.bias_mu
+
         weight_kl_loss = 0.5 * torch.sum(
-            # (self.weight_mu**2 + self.weight_sigma**2) / (weight_prior_sigma**2)
-            (self.weight_sigma**2) / (weight_prior_sigma**2)
+            (weight_mu**2 + self.weight_sigma**2) / (weight_prior_sigma**2)
             - 1 - torch.log(self.weight_sigma**2)
             + math.log(weight_prior_sigma**2)
         )
 
         bias_kl_loss = 0.5 * torch.sum(
-            # (self.bias_mu**2 + self.bias_sigma**2) / (bias_prior_sigma**2)
-            (self.bias_sigma**2) / (bias_prior_sigma**2)
+            (bias_mu**2 + self.bias_sigma**2) / (bias_prior_sigma**2)
             - 1 - torch.log(self.bias_sigma**2)
             + math.log(bias_prior_sigma**2)
         )
@@ -89,9 +94,11 @@ class BayesianNN(nn.Module):
     def __init__(self,
                  weight_prior_sigma,
                  bias_prior_sigma,
-                 activation_function=None):
+                 activation_function=None,
+                 mu_excluded=False):
 
         super(BayesianNN, self).__init__()
+        self.mu_excluded = mu_excluded
 
         self.weight_prior_sigma = weight_prior_sigma
         self.bias_prior_sigma = bias_prior_sigma
@@ -116,12 +123,13 @@ class BayesianNN(nn.Module):
         x = input.repeat(samples, 1, 1)
         x = self.activation_function(self.dense_variational_1(x))
         x = self.activation_function(self.dense_variational_2(x))
-        x = self.activation_function(self.dense_variational_3(x))
+        x = self.dense_variational_3(x)
         return x
 
-    def kl_loss(self,):
+    def kl_loss(self):
         kl_loss = 0
         for child in self.children():
             kl_loss += child.kl_loss(self.weight_prior_sigma,
-                                     self.bias_prior_sigma)
+                                     self.bias_prior_sigma,
+                                     self.mu_excluded)
         return kl_loss

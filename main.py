@@ -6,9 +6,10 @@ from torchvision import transforms
 
 from bnn import BayesianNN
 from utils import cuda_timer
-from train import train, test
+from train import train, test, active_sampling
 from results_logger import ResultsLogger
 
+import numpy as np
 import datetime
 import argparse
 
@@ -22,7 +23,14 @@ def main():
     parser.add_argument('--name', type=str, default="UNAMED")
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--test-batch-size', type=int, default=1000)
-    parser.add_argument('--epochs', type=int, default=500)
+    parser.add_argument('--mu-excluded', action='store_true', default=False)
+    parser.add_argument('--active-sampling', action='store_true', default=False)
+    parser.add_argument('--active-samples', type=int, default=5)
+    parser.add_argument('--iters-between-active-samples', type=int, default=10)
+    parser.add_argument('--initial-samples', type=int, default=60000)
+    parser.add_argument('--final-samples', type=int, default=60000)
+    parser.add_argument('--initial-iterations', type=int, default=200)
+    parser.add_argument('--epochs', type=int, default=5000)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--custom-init', action='store_true', default=False)
     parser.add_argument('--weight-mu-mean-init', type=float, default=0.1)
@@ -43,8 +51,8 @@ def main():
 
     logger.info(args)
 
-    exp_name = (datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
-                + '_' + args.name)
+    exp_name = (args.name + '_'
+                + datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
 
     device = torch.device('cuda:0')
 
@@ -62,11 +70,15 @@ def main():
     validation_data = datasets.MNIST('./mnist/', train=False,
                                      transform=transform)
 
+    subset_indices = np.random.choice(len(train_data),
+                                      args.initial_samples,
+                                      replace=False)
+
     train_loader = torch.utils.data.DataLoader(
         train_data,
         batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=4,
+        num_workers=8,
+        sampler=torch.utils.data.SubsetRandomSampler(subset_indices)
     )
 
     test_loader = torch.utils.data.DataLoader(
@@ -82,7 +94,8 @@ def main():
     model = BayesianNN(
         weight_prior_sigma=args.weight_prior,
         bias_prior_sigma=args.bias_prior,
-        activation_function=F.elu
+        activation_function=F.elu,
+        mu_excluded=args.mu_excluded
     ).to(device)
 
     # parameter initialization
@@ -119,6 +132,25 @@ def main():
                                              results_logger)
 
         results_logger.log_epoch(epoch, train_time, test_time)
+
+        # print("{} {} {} {}".format(args.active_sampling,
+                                # len(train_loader.sampler.indices),
+                                # args.initial_iterations,
+                                # args.iters_between_active_samples))
+
+                # len(train_loader.sampler.indices) < args.final_samples and \
+        if args.active_sampling and \
+                epoch > args.initial_iterations and \
+                epoch % args.iters_between_active_samples == 0:
+
+            train_loader = active_sampling(model,
+                                           device,
+                                           train_data,
+                                           train_loader,
+                                           results_logger,
+                                           args.active_samples,
+                                           )
+
 
 if __name__ == '__main__':
     main()

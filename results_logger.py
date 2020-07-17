@@ -70,7 +70,7 @@ class ResultsLogger(object):
 
         with torch.no_grad():
             batch_size = len(data)
-            dataset_size = len(train_loader.dataset)
+            dataset_size = len(train_loader.sampler.indices)
 
             if batch_idx % 200 == 0:
                 logger.info('{}/{} \tLoss: {:.6f}'
@@ -87,6 +87,7 @@ class ResultsLogger(object):
                 likelihood_cost.item()
             )
             self.train_metrics["losses"].append(loss.item())
+            self.train_metrics["training_size"] = dataset_size
 
             mean_probs = torch.mean(torch.softmax(logits, dim=-1), dim=0)
             preds = torch.argmax(mean_probs, 1)
@@ -229,6 +230,7 @@ class ResultsLogger(object):
                 "train_aleatoric_incorrect":
                     torch.mean(train_aleatorics[~train_correct]).item(),
 
+                "train_dataset_size": self.train_metrics["training_size"],
                 "test_time": test_time,
 
                 "example_imgs":
@@ -244,7 +246,7 @@ class ResultsLogger(object):
                             cols=2,
                             column_widths=[0.3, 0.7])
 
-        annotations = []
+        # annotations = []
 
         for i, example in enumerate(examples[:5]):
             data, target, probs = example
