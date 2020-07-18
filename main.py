@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--test-batch-size', type=int, default=1000)
     parser.add_argument('--mu-excluded', action='store_true', default=False)
+    parser.add_argument('--empirical-complexity', action='store_true',
+                        default=False)
     parser.add_argument('--active-sampling', action='store_true', default=False)
     parser.add_argument('--active-samples', type=int, default=5)
     parser.add_argument('--iters-between-active-samples', type=int, default=10)
@@ -41,6 +43,7 @@ def main():
     parser.add_argument('--bias-mu-scale-init', type=float, default=0.1)
     parser.add_argument('--bias-rho-mean-init', type=float, default=0.1)
     parser.add_argument('--bias-rho-scale-init', type=float, default=0.1)
+    parser.add_argument('--prior-mix', type=float, default=1.0)
     parser.add_argument('--weight-prior', type=float, default=0.1)
     parser.add_argument('--bias-prior', type=float, default=0.1)
     parser.add_argument('--samples', type=int, default=3)
@@ -95,7 +98,9 @@ def main():
         weight_prior_sigma=args.weight_prior,
         bias_prior_sigma=args.bias_prior,
         activation_function=F.elu,
-        mu_excluded=args.mu_excluded
+        prior_mix=args.prior_mix,
+        empirical_complexity_loss=args.empirical_complexity,
+        mu_excluded=args.mu_excluded,
     ).to(device)
 
     # parameter initialization
@@ -123,6 +128,7 @@ def main():
                                                train_loader,
                                                optimizer,
                                                results_logger,
+                                               epoch,
                                                samples=args.samples)
 
         test_results, test_time = cuda_timer(test,

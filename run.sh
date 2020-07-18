@@ -1,10 +1,9 @@
 python ./main.py \
-    --name 100_SAMPLES_LAST_LAYER_ACTIVATION_FIXED \
+    --name TEST_2 \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 1000 \
-    --initial-samples 100 \
-    --lr 0.1 \
+    --lr 0.001 \
     --weight-mu-mean-init 0.0 \
     --weight-mu-scale-init 0.001 \
     --weight-rho-mean-init -7.0 \
@@ -13,7 +12,8 @@ python ./main.py \
     --bias-mu-scale-init 0.001 \
     --bias-rho-mean-init -7.0 \
     --bias-rho-scale-init 0.001 \
+    --prior-mix 1.0 \
     --weight-prior 0.1 \
     --bias-prior 1 \
-    --samples 15 \
+    --samples 5 \
     --pre-normalization \

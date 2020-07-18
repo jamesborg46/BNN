@@ -3,7 +3,13 @@ import numpy as np
 from utils import batch_cross_entropy, get_uncertainties
 
 
-def train(model, device, train_loader, optimizer, results_logger, samples=1):
+def train(model,
+          device,
+          train_loader,
+          optimizer,
+          results_logger,
+          epoch,
+          samples=1):
     model.train()
 
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -12,10 +18,9 @@ def train(model, device, train_loader, optimizer, results_logger, samples=1):
         # dataset_size = len(train_loader.dataset)
         optimizer.zero_grad()
         logits = model(data.flatten(1), samples=samples)
-        complexity_cost = model.kl_loss()
+        complexity_cost = model.complexity_cost()
         likelihood_cost = batch_cross_entropy(logits, target, reduction='mean')
         loss = (1 / dataset_size) * complexity_cost + likelihood_cost
-        # loss = likelihood_cost
         loss.backward()
         optimizer.step()
 

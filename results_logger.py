@@ -112,7 +112,7 @@ class ResultsLogger(object):
         with torch.no_grad():
             dataset_size = len(test_loader.dataset)
 
-            complexity_cost = self.model.kl_loss()
+            complexity_cost = self.model.complexity_cost()
             likelihood_cost = batch_cross_entropy(logits,
                                                   target,
                                                   reduction='mean')
