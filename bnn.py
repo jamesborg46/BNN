@@ -74,11 +74,11 @@ class DenseVariational(nn.Module):
     def empirical_complexity_loss(self, weight_prior_sigma, bias_prior_sigma):
         weight_log_prob = (torch.distributions
                                 .Normal(self.weight_mu, self.weight_sigma)
-                                .log_prob(self.weight))
+                                .log_prob(self.weight.detach()))
 
         bias_log_prob = (torch.distributions
                               .Normal(self.bias_mu, self.bias_sigma)
-                              .log_prob(self.bias))
+                              .log_prob(self.bias.detach()))
 
         self.weight_prior = torch.distributions.Normal(0, weight_prior_sigma)
         self.bias_prior = torch.distributions.Normal(0, bias_prior_sigma)
@@ -148,20 +148,26 @@ class BayesianNN(nn.Module):
         self.weight_prior_sigma = weight_prior_sigma
         self.bias_prior_sigma = bias_prior_sigma
 
-        # self.pi = nn.Parameter(torch.tensor(prior_mix), requires_grad=False)
-        # prior_mix = torch.distributions.Categorical(
-        #     probs=torch.tensor([self.pi, 1 - self.pi])
-        # )
+#         self.pi = nn.Parameter(torch.tensor(prior_mix), requires_grad=False)
+#         prior_mix = torch.distributions.Categorical(
+#             probs=torch.tensor([self.pi, 1 - self.pi])
+#         )
 
-        # self.weight_prior_dist = torch.distributions.MixtureSameFamily(
-        #     prior_mix,
-        #     torch.distributions.Normal(0, [weight_prior_sigma, 0.00001])
-        # )
+#         self.weight_prior_dist = torch.distributions.MixtureSameFamily(
+#             prior_mix,
+#             torch.distributions.Normal(0,
+#                                        torch.tensor([weight_prior_sigma,
+#                                                      0.00001])
+#                                        )
+#         )
 
-        # self.bias_prior_dist = torch.distributions.MixtureSameFamily(
-        #     prior_mix,
-        #     torch.distributions.Normal(0, [bias_prior_sigma, 0.00001])
-        # )
+#         self.bias_prior_dist = torch.distributions.MixtureSameFamily(
+#             prior_mix,
+#             torch.distributions.Normal(0,
+#                                        torch.tensor([bias_prior_sigma,
+#                                                      0.00001])
+#                                        )
+#         )
 
         self.dense_variational_1 = DenseVariational(784, 1200)
         self.dense_variational_2 = DenseVariational(1200, 1200)
