@@ -62,23 +62,28 @@ class DenseVariational(nn.Module):
 
         self.weight = (torch.distributions
                        .Normal(self.weight_mu, self.weight_sigma)
-                       .rsample((samples,)))
+                       # .rsample((samples,)))
+                       .sample((samples,))).requires_grad_()
 
         self.bias_sigma = torch.log(1 + torch.exp(self.bias_rho))
         self.bias = (torch.distributions
                      .Normal(self.bias_mu, self.bias_sigma)
-                     .rsample((samples,)))
+                     # .rsample((samples,)))
+                     .sample((samples,))).requires_grad_()
 
         return batch_linear(input, self.weight, self.bias)
 
     def empirical_complexity_loss(self, weight_prior_sigma, bias_prior_sigma):
+        # self.detached_weight = self.weight.detach().requires_grad_()
+        # self.detached_bias = self.bias.detach().requires_grad_()
+
         weight_log_prob = (torch.distributions
                                 .Normal(self.weight_mu, self.weight_sigma)
-                                .log_prob(self.weight.detach()))
+                                .log_prob(self.weight))
 
         bias_log_prob = (torch.distributions
                               .Normal(self.bias_mu, self.bias_sigma)
-                              .log_prob(self.bias.detach()))
+                              .log_prob(self.bias))
 
         self.weight_prior = torch.distributions.Normal(0, weight_prior_sigma)
         self.bias_prior = torch.distributions.Normal(0, bias_prior_sigma)
@@ -93,8 +98,8 @@ class DenseVariational(nn.Module):
 
         return empirical_complexity_loss
 
-    def kl_loss(self, weight_prior_sigma, bias_prior_sigma, mu_excluded=False):
     # def kl_loss(self, weight_prior_dist, bias_prior_dist, mu_excluded=False):
+    def kl_loss(self, weight_prior_sigma, bias_prior_sigma, mu_excluded=False):
         if mu_excluded:
             weight_mu = 0
             bias_mu = 0
@@ -102,14 +107,13 @@ class DenseVariational(nn.Module):
             weight_mu = self.weight_mu
             bias_mu = self.bias_mu
 
-        ### Manual KL Calculations - leaving here for reference and in case 
-        ### They are required 
+        ### Manual KL Calculations - leaving here for reference and in case
+        ### They are required
 
         # weight_kl_loss = 0.5 * torch.sum(
         #     (weight_mu**2 + self.weight_sigma**2) / (weight_prior_sigma**2)
         #     - 1 - torch.log(self.weight_sigma**2)
         #     + math.log(weight_prior_sigma**2)
-        # 
 
         # bias_kl_loss = 0.5 * torch.sum(
         #     (bias_mu**2 + self.bias_sigma**2) / (bias_prior_sigma**2)
@@ -129,6 +133,33 @@ class DenseVariational(nn.Module):
 
         return (torch.sum(torch.distributions.kl_divergence(self.weight_dist, weight_prior_dist)) +
                 torch.sum(torch.distributions.kl_divergence(self.bias_dist, bias_prior_dist)))
+
+    def explicit_gradient_calc(self, loss):
+        dl_dw = torch.autograd.grad(loss, self.weight, retain_graph=True)[0]
+        dl_dwmu = torch.autograd.grad(loss, self.weight_mu, retain_graph=True)[0]
+        dl_dwrho = torch.autograd.grad(loss, self.weight_rho, retain_graph=True)[0]
+
+        weight_eps = (self.weight - self.weight_mu) / self.weight_sigma
+
+        self.weight_mu.grad = torch.mean(dl_dw + dl_dwmu, dim=0)
+        self.weight_rho.grad = torch.mean(
+            dl_dw * (weight_eps / (1 + torch.exp(-self.weight_rho)))
+            + dl_dwrho,
+            dim=0
+        )
+
+        dl_db = torch.autograd.grad(loss, self.bias, retain_graph=True)[0]
+        dl_dbmu = torch.autograd.grad(loss, self.bias_mu, retain_graph=True)[0]
+        dl_dbrho = torch.autograd.grad(loss, self.bias_rho, retain_graph=True)[0]
+
+        bias_eps = (self.bias - self.bias_mu) / self.bias_sigma
+
+        self.bias_mu.grad = torch.mean(dl_db + dl_dbmu, dim=0)
+        self.bias_rho.grad = torch.mean(
+            dl_db * (bias_eps / (1 + torch.exp(-self.bias_rho)))
+            + dl_dbrho,
+            dim=0
+        )
 
 
 class BayesianNN(nn.Module):
@@ -217,3 +248,7 @@ class BayesianNN(nn.Module):
             return self.empirical_complexity_loss()
         else:
             return self.kl_loss()
+
+    def explicit_gradient_calc(self, loss):
+        for child in self.children():
+            child.explicit_gradient_calc(loss)

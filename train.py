@@ -20,8 +20,11 @@ def train(model,
         logits = model(data.flatten(1), samples=samples)
         complexity_cost = model.complexity_cost()
         likelihood_cost = batch_cross_entropy(logits, target, reduction='mean')
-        loss = (1 / dataset_size) * complexity_cost + likelihood_cost
-        loss.backward()
+        # loss = (1 / (dataset_size * samples)) * complexity_cost + samples * likelihood_cost
+        loss = (1 / (dataset_size)) * complexity_cost + samples * likelihood_cost
+        # loss = (1 / (dataset_size)) * complexity_cost + likelihood_cost
+        # loss.backward()
+        model.explicit_gradient_calc(loss)
         optimizer.step()
 
         results_logger.log_train_step(

@@ -1,10 +1,9 @@
 python ./main.py \
-    --name EMPIRICAL_COMPLEXITY_2 \
+    --name EXPLICIT_GRADIENT \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 1000 \
     --lr 0.001 \
-    --empirical-complexity \
     --weight-mu-mean-init 0.0 \
     --weight-mu-scale-init 0.001 \
     --weight-rho-mean-init -7.0 \
@@ -16,5 +15,5 @@ python ./main.py \
     --prior-mix 1.0 \
     --weight-prior 0.1 \
     --bias-prior 1 \
-    --samples 5 \
+    --samples 3 \
     --pre-normalization \
