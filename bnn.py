@@ -9,10 +9,16 @@ import math
 
 class DenseVariational(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 explicit_gradient_flag=False,
+                 bias=True):
+
         super(DenseVariational, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
+        self.explicit_gradient_flag = explicit_gradient_flag
 
         self.weight_mu = nn.Parameter(
             torch.Tensor(out_features, in_features))
@@ -59,17 +65,20 @@ class DenseVariational(nn.Module):
         samples, batch_size, units = input.shape
 
         self.weight_sigma = torch.log(1 + torch.exp(self.weight_rho))
-
-        self.weight = (torch.distributions
-                       .Normal(self.weight_mu, self.weight_sigma)
-                       # .rsample((samples,)))
-                       .sample((samples,))).requires_grad_()
-
         self.bias_sigma = torch.log(1 + torch.exp(self.bias_rho))
-        self.bias = (torch.distributions
-                     .Normal(self.bias_mu, self.bias_sigma)
-                     # .rsample((samples,)))
-                     .sample((samples,))).requires_grad_()
+
+        self.weight_dist = (torch.distributions
+                                 .Normal(self.weight_mu, self.weight_sigma))
+
+        self.bias_dist = (torch.distributions
+                               .Normal(self.bias_mu, self.bias_sigma))
+
+        if self.explicit_gradient_flag:
+            self.bias = self.bias_dist.sample((samples,)).requires_grad_()
+            self.weight = self.weight_dist.sample((samples,)).requires_grad_()
+        else:
+            self.bias = self.bias_dist.rsample((samples,))
+            self.weight = self.weight_dist.rsample((samples,))
 
         return batch_linear(input, self.weight, self.bias)
 
@@ -92,20 +101,16 @@ class DenseVariational(nn.Module):
         bias_prior_log_prob = self.bias_prior.log_prob(self.bias)
 
         empirical_complexity_loss = (
-            torch.sum(weight_log_prob - weight_prior_log_prob) +
-            torch.sum(bias_log_prob - bias_prior_log_prob)
+            torch.sum(weight_log_prob - weight_prior_log_prob, dim=[1,2]) +
+            torch.sum(bias_log_prob - bias_prior_log_prob, dim=1)
         )
 
         return empirical_complexity_loss
 
     # def kl_loss(self, weight_prior_dist, bias_prior_dist, mu_excluded=False):
-    def kl_loss(self, weight_prior_sigma, bias_prior_sigma, mu_excluded=False):
-        if mu_excluded:
-            weight_mu = 0
-            bias_mu = 0
-        else:
-            weight_mu = self.weight_mu
-            bias_mu = self.bias_mu
+    def kl_loss(self, weight_prior_sigma, bias_prior_sigma):
+        weight_mu = self.weight_mu
+        bias_mu = self.bias_mu
 
         ### Manual KL Calculations - leaving here for reference and in case
         ### They are required
@@ -126,40 +131,69 @@ class DenseVariational(nn.Module):
         weight_prior_dist = torch.distributions.Normal(0, weight_prior_sigma)
         bias_prior_dist = torch.distributions.Normal(0, bias_prior_sigma)
 
-        self.weight_dist = torch.distributions.Normal(self.weight_mu,
-                                                      self.weight_sigma)
-        self.bias_dist = torch.distributions.Normal(self.bias_mu,
-                                                    self.bias_sigma)
-
         return (torch.sum(torch.distributions.kl_divergence(self.weight_dist, weight_prior_dist)) +
                 torch.sum(torch.distributions.kl_divergence(self.bias_dist, bias_prior_dist)))
 
-    def explicit_gradient_calc(self, loss):
-        dl_dw = torch.autograd.grad(loss, self.weight, retain_graph=True)[0]
-        dl_dwmu = torch.autograd.grad(loss, self.weight_mu, retain_graph=True)[0]
-        dl_dwrho = torch.autograd.grad(loss, self.weight_rho, retain_graph=True)[0]
+    def explicit_gradient_calc(self, sampled_losses):
+        assert sampled_losses.shape[0] == self.weight.shape[0]
+        num_samples = sampled_losses.shape[0]
 
-        weight_eps = (self.weight - self.weight_mu) / self.weight_sigma
+        weight_mu_grads = []
+        weight_rho_grads = []
+        bias_mu_grads = []
+        bias_rho_grads = []
 
-        self.weight_mu.grad = torch.mean(dl_dw + dl_dwmu, dim=0)
-        self.weight_rho.grad = torch.mean(
-            dl_dw * (weight_eps / (1 + torch.exp(-self.weight_rho)))
-            + dl_dwrho,
-            dim=0
-        )
+        for i in range(num_samples):
+            loss = sampled_losses[i]
 
-        dl_db = torch.autograd.grad(loss, self.bias, retain_graph=True)[0]
-        dl_dbmu = torch.autograd.grad(loss, self.bias_mu, retain_graph=True)[0]
-        dl_dbrho = torch.autograd.grad(loss, self.bias_rho, retain_graph=True)[0]
+            dl_dw = torch.autograd.grad(loss,
+                                        self.weight,
+                                        retain_graph=True)[0][i]
 
-        bias_eps = (self.bias - self.bias_mu) / self.bias_sigma
+            dl_dwmu = torch.autograd.grad(loss,
+                                          self.weight_mu,
+                                          retain_graph=True)[0]
 
-        self.bias_mu.grad = torch.mean(dl_db + dl_dbmu, dim=0)
-        self.bias_rho.grad = torch.mean(
-            dl_db * (bias_eps / (1 + torch.exp(-self.bias_rho)))
-            + dl_dbrho,
-            dim=0
-        )
+            dl_dwrho = torch.autograd.grad(loss,
+                                           self.weight_rho,
+                                           retain_graph=True)[0]
+
+            weight_eps = (self.weight[i] - self.weight_mu) / self.weight_sigma
+
+            weight_mu_grads.append(dl_dw + dl_dwmu)
+            weight_rho_grads.append(
+                dl_dw * (weight_eps / (1 + torch.exp(-self.weight_rho)))
+                + dl_dwrho
+            )
+
+            dl_db = torch.autograd.grad(loss,
+                                        self.bias,
+                                        retain_graph=True)[0][i]
+
+            dl_dbmu = torch.autograd.grad(loss,
+                                          self.bias_mu,
+                                          retain_graph=True)[0]
+
+            dl_dbrho = torch.autograd.grad(loss,
+                                           self.bias_rho,
+                                           retain_graph=True)[0]
+
+            bias_eps = (self.bias[i] - self.bias_mu) / self.bias_sigma
+
+            bias_mu_grads.append(dl_db + dl_dbmu)
+            bias_rho_grads.append(
+                dl_db * (bias_eps / (1 + torch.exp(-self.bias_rho)))
+                + dl_dbrho
+            )
+
+        self.weight_mu.grad = torch.mean(torch.stack(weight_mu_grads),
+                                         dim=0)
+        self.weight_rho.grad = torch.mean(torch.stack(weight_rho_grads),
+                                                      dim=0)
+        self.bias_mu.grad = torch.mean(torch.stack(bias_mu_grads),
+                                       dim=0)
+        self.bias_rho.grad = torch.mean(torch.stack(bias_rho_grads),
+                                        dim=0)
 
 
 class BayesianNN(nn.Module):
@@ -170,11 +204,11 @@ class BayesianNN(nn.Module):
                  activation_function=None,
                  prior_mix=1,
                  empirical_complexity_loss=False,
-                 mu_excluded=False):
+                 explicit_gradient=False):
 
         super(BayesianNN, self).__init__()
-        self.mu_excluded = mu_excluded
         self.empirical_complexity_loss_flag = empirical_complexity_loss
+        self.explicit_gradient_flag = explicit_gradient
 
         self.weight_prior_sigma = weight_prior_sigma
         self.bias_prior_sigma = bias_prior_sigma
@@ -200,9 +234,17 @@ class BayesianNN(nn.Module):
 #                                        )
 #         )
 
-        self.dense_variational_1 = DenseVariational(784, 1200)
-        self.dense_variational_2 = DenseVariational(1200, 1200)
-        self.dense_variational_3 = DenseVariational(1200, 10)
+        self.dense_variational_1 = DenseVariational(784,
+                                                    1200,
+                                                    explicit_gradient)
+
+        self.dense_variational_2 = DenseVariational(1200,
+                                                    1200,
+                                                    explicit_gradient)
+
+        self.dense_variational_3 = DenseVariational(1200,
+                                                    10,
+                                                    explicit_gradient)
 
         if activation_function is None:
             self.activation_function = F.relu
@@ -236,8 +278,7 @@ class BayesianNN(nn.Module):
         kl_loss = 0
         for child in self.children():
             kl_loss += child.kl_loss(self.weight_prior_sigma,
-                                     self.bias_prior_sigma,
-                                     self.mu_excluded)
+                                     self.bias_prior_sigma)
             # kl_loss += child.kl_loss(self.weight_prior_dist,
             #                          self.bias_prior_dist,
             #                          self.mu_excluded)
@@ -249,6 +290,14 @@ class BayesianNN(nn.Module):
         else:
             return self.kl_loss()
 
-    def explicit_gradient_calc(self, loss):
+    def explicit_gradient_calc(self, sampled_losses):
         for child in self.children():
-            child.explicit_gradient_calc(loss)
+            child.explicit_gradient_calc(sampled_losses)
+
+    def propagate_loss(self, sampled_losses):
+        if self.explicit_gradient_flag:
+            self.explicit_gradient_calc(sampled_losses)
+        else:
+            loss = torch.mean(sampled_losses)
+            loss.backward()
+

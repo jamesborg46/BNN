@@ -1,9 +1,11 @@
 python ./main.py \
-    --name EXPLICIT_GRADIENT \
+    --name EXPLICIT_GRADIENT_EMPIRICAL_COMPLEXITY \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 1000 \
     --lr 0.001 \
+    --explicit-gradient \
+    --empirical-complexity \
     --weight-mu-mean-init 0.0 \
     --weight-mu-scale-init 0.001 \
     --weight-rho-mean-init -7.0 \

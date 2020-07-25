@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import torch
-from utils import batch_cross_entropy, get_uncertainties
+from utils import sampled_cross_entropies, get_uncertainties
 import random
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -113,18 +113,22 @@ class ResultsLogger(object):
             dataset_size = len(test_loader.dataset)
 
             complexity_cost = self.model.complexity_cost()
-            likelihood_cost = batch_cross_entropy(logits,
-                                                  target,
-                                                  reduction='mean')
+            # likelihood_cost = sampled_cross_entropies(logits,
+            #                                           target,
+            #                                           reduction='mean')
+            likelihood_cost = sampled_cross_entropies(logits,
+                                                      target,
+                                                      reduction='mean')
+
             loss = (1 / dataset_size) * complexity_cost + likelihood_cost
 
             self.test_metrics["complexity_costs"].append(
-                complexity_cost.item()
+                torch.mean(complexity_cost).item()
             )
             self.test_metrics["likelihood_costs"].append(
-                likelihood_cost.item()
+                torch.mean(likelihood_cost).item()
             )
-            self.test_metrics["losses"].append(loss.item())
+            self.test_metrics["losses"].append(torch.mean(loss).item())
 
             probs = torch.softmax(logits, dim=-1)
             mean_probs = torch.mean(probs, dim=0)

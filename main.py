@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--batch-size', type=int, default=128)
     parser.add_argument('--test-batch-size', type=int, default=1000)
     parser.add_argument('--mu-excluded', action='store_true', default=False)
+    parser.add_argument('--explicit-gradient', action='store_true',
+                        default=False)
     parser.add_argument('--empirical-complexity', action='store_true',
                         default=False)
     parser.add_argument('--active-sampling', action='store_true', default=False)
@@ -100,7 +102,7 @@ def main():
         activation_function=F.elu,
         prior_mix=args.prior_mix,
         empirical_complexity_loss=args.empirical_complexity,
-        mu_excluded=args.mu_excluded,
+        explicit_gradient=args.explicit_gradient,
     ).to(device)
 
     # parameter initialization

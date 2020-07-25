@@ -21,18 +21,30 @@ def batch_linear(input, weight, bias):
     return torch.bmm(input, torch.transpose(weight, 1, 2)) + bias.unsqueeze(1)
 
 
-def batch_cross_entropy(input, target, reduction='mean'):
-    samples, batch_size, classes = input.shape
+def sampled_cross_entropies(input, target, reduction='mean'):
+    # samples, batch_size, classes = input.shape
 
-    # flattening across samples & batches
-    flattened_input = input.flatten(0, 1)
+    # # flattening across samples & batches
+    # flattened_input = input.flatten(0, 1)
 
-    # Repeating targets to match number of samples
-    repeated_target = target.repeat(samples)
+    # # Repeating targets to match number of samples
+    # repeated_target = target.repeat(samples)
 
-    return F.cross_entropy(flattened_input,
-                           repeated_target,
-                           reduction=reduction)
+    # batch_cross_entropy =  F.cross_entropy(
+    #     flattened_input,
+    #     repeated_target,
+    #     reduction=reduction)
+
+    sampled_cross_entropies = []
+    for sample in input:
+        sampled_cross_entropies.append(
+            F.cross_entropy(sample, target, reduction=reduction)
+        )
+
+    sampled_cross_entropies = torch.stack(sampled_cross_entropies)
+
+    # return batch_cross_entropy
+    return sampled_cross_entropies
 
 
 def get_uncertainties(logits):

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from utils import batch_cross_entropy, get_uncertainties
+from utils import sampled_cross_entropies, get_uncertainties
 
 
 def train(model,
@@ -19,21 +19,27 @@ def train(model,
         optimizer.zero_grad()
         logits = model(data.flatten(1), samples=samples)
         complexity_cost = model.complexity_cost()
-        likelihood_cost = batch_cross_entropy(logits, target, reduction='mean')
+        likelihood_cost = sampled_cross_entropies(
+            logits, target, reduction='mean')
         # loss = (1 / (dataset_size * samples)) * complexity_cost + samples * likelihood_cost
-        loss = (1 / (dataset_size)) * complexity_cost + samples * likelihood_cost
-        # loss = (1 / (dataset_size)) * complexity_cost + likelihood_cost
+        # loss = (1 / (dataset_size)) * complexity_cost + samples * likelihood_cost
+        sampled_losses = (
+            (1 / (dataset_size)) * complexity_cost + likelihood_cost
+        )
         # loss.backward()
-        model.explicit_gradient_calc(loss)
+        # model.explicit_gradient_calc(loss)
+        model.propagate_loss(sampled_losses)
         optimizer.step()
 
+        loss = torch.mean(sampled_losses)
         results_logger.log_train_step(
             data,
             target,
             logits,
             batch_idx,
-            complexity_cost,
-            likelihood_cost,
+            torch.mean(complexity_cost),
+            torch.mean(likelihood_cost),
+            # likelihood_cost,
             loss,
             train_loader
         )
