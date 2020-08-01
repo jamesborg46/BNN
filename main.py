@@ -144,12 +144,6 @@ def main():
 
         results_logger.log_epoch(epoch, train_time, test_time)
 
-        # print("{} {} {} {}".format(args.active_sampling,
-                                # len(train_loader.sampler.indices),
-                                # args.initial_iterations,
-                                # args.iters_between_active_samples))
-
-                # len(train_loader.sampler.indices) < args.final_samples and \
         if args.active_sampling and \
                 epoch > args.initial_iterations and \
                 epoch % args.iters_between_active_samples == 0:

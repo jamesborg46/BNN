@@ -15,19 +15,14 @@ def train(model,
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         dataset_size = len(train_loader.sampler.indices)
-        # dataset_size = len(train_loader.dataset)
         optimizer.zero_grad()
         logits = model(data.flatten(1), samples=samples)
         complexity_cost = model.complexity_cost()
         likelihood_cost = sampled_cross_entropies(
             logits, target, reduction='mean')
-        # loss = (1 / (dataset_size * samples)) * complexity_cost + samples * likelihood_cost
-        # loss = (1 / (dataset_size)) * complexity_cost + samples * likelihood_cost
         sampled_losses = (
             (1 / (dataset_size)) * complexity_cost + likelihood_cost
         )
-        # loss.backward()
-        # model.explicit_gradient_calc(loss)
         model.propagate_loss(sampled_losses)
         optimizer.step()
 
@@ -39,7 +34,6 @@ def train(model,
             batch_idx,
             torch.mean(complexity_cost),
             torch.mean(likelihood_cost),
-            # likelihood_cost,
             loss,
             train_loader
         )

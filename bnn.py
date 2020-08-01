@@ -83,9 +83,6 @@ class DenseVariational(nn.Module):
         return batch_linear(input, self.weight, self.bias)
 
     def empirical_complexity_loss(self, weight_prior_dist, bias_prior_dist):
-        # self.detached_weight = self.weight.detach().requires_grad_()
-        # self.detached_bias = self.bias.detach().requires_grad_()
-
         weight_log_prob = (torch.distributions
                                 .Normal(self.weight_mu, self.weight_sigma)
                                 .log_prob(self.weight))
@@ -93,9 +90,6 @@ class DenseVariational(nn.Module):
         bias_log_prob = (torch.distributions
                               .Normal(self.bias_mu, self.bias_sigma)
                               .log_prob(self.bias))
-
-        # self.weight_prior = torch.distributions.Normal(0, weight_prior_sigma)
-        # self.bias_prior = torch.distributions.Normal(0, bias_prior_sigma)
 
         weight_prior_log_prob = weight_prior_dist.log_prob(self.weight)
         bias_prior_log_prob = bias_prior_dist.log_prob(self.bias)
@@ -107,32 +101,21 @@ class DenseVariational(nn.Module):
 
         return empirical_complexity_loss
 
-    # def kl_loss(self, weight_prior_dist, bias_prior_dist, mu_excluded=False):
-    def kl_loss(self, weight_prior_dist, bias_prior_dist):
+    def analytical_complexity_loss(self, weight_prior_dist, bias_prior_dist):
         weight_mu = self.weight_mu
         bias_mu = self.bias_mu
 
-        ### Manual KL Calculations - leaving here for reference and in case
-        ### They are required
+        weights_kl_loss = torch.sum(
+            torch.distributions.kl_divergence(self.weight_dist,
+                                              weight_prior_dist)
+        )
 
-        # weight_kl_loss = 0.5 * torch.sum(
-        #     (weight_mu**2 + self.weight_sigma**2) / (weight_prior_sigma**2)
-        #     - 1 - torch.log(self.weight_sigma**2)
-        #     + math.log(weight_prior_sigma**2)
+        bias_kl_loss = torch.sum(
+            torch.distributions.kl_divergence(self.bias_dist,
+                                              bias_prior_dist)
+        )
 
-        # bias_kl_loss = 0.5 * torch.sum(
-        #     (bias_mu**2 + self.bias_sigma**2) / (bias_prior_sigma**2)
-        #     - 1 - torch.log(self.bias_sigma**2)
-        #     + math.log(bias_prior_sigma**2)
-        # )
-
-        # return weight_kl_loss + bias_kl_loss
-
-        # weight_prior_dist = torch.distributions.Normal(0, weight_prior_sigma)
-        # bias_prior_dist = torch.distributions.Normal(0, bias_prior_sigma)
-
-        return (torch.sum(torch.distributions.kl_divergence(self.weight_dist, weight_prior_dist)) +
-                torch.sum(torch.distributions.kl_divergence(self.bias_dist, bias_prior_dist)))
+        return weights_kl_loss + bias_kl_loss
 
     def explicit_gradient_calc(self, sampled_losses):
         assert sampled_losses.shape[0] == self.weight.shape[0]
@@ -274,21 +257,20 @@ class BayesianNN(nn.Module):
             )
         return empirical_complexity_loss
 
-    def kl_loss(self):
-        kl_loss = 0
+    def analytical_complexity_loss(self):
+        analytical_complexity_loss = 0
         for child in self.children():
-            kl_loss += child.kl_loss(self.weight_prior_dist,
-                                     self.bias_prior_dist)
-            # kl_loss += child.kl_loss(self.weight_prior_dist,
-            #                          self.bias_prior_dist,
-            #                          self.mu_excluded)
-        return kl_loss
+            analytical_complexity_loss += child.analytical_complexity_loss(
+                self.weight_prior_dist,
+                self.bias_prior_dist
+            )
+        return analytical_complexity_loss
 
     def complexity_cost(self):
         if self.empirical_complexity_loss_flag:
             return self.empirical_complexity_loss()
         else:
-            return self.kl_loss()
+            return self.analytical_complexity_loss()
 
     def explicit_gradient_calc(self, sampled_losses):
         for child in self.children():
