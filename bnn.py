@@ -26,8 +26,8 @@ class DenseVariational(nn.Module):
         self.weight_rho = nn.Parameter(
             torch.Tensor(out_features, in_features))
 
-        self.bias_mu = nn.Parameter(torch.Tensor(out_features).cuda())
-        self.bias_rho = nn.Parameter(torch.Tensor(out_features).cuda())
+        self.bias_mu = nn.Parameter(torch.Tensor(out_features))
+        self.bias_rho = nn.Parameter(torch.Tensor(out_features)
 
         # There variables hold the latest samples of the weights and biases and
         # will be populated after the first forward run of the layer
