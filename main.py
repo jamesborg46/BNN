@@ -96,9 +96,12 @@ def main():
     logger.info("Training set size: {}".format(len(train_loader.dataset)))
     logger.info("Test set size: {}".format(len(test_loader.dataset)))
 
+    weight_prior_dist = torch.distributions.Normal(0, args.weight_prior)
+    bias_prior_dist = torch.distributions.Normal(0, args.bias_prior)
+
     model = BayesianNN(
-        weight_prior_sigma=args.weight_prior,
-        bias_prior_sigma=args.bias_prior,
+        weight_prior_dist=weight_prior_dist,
+        bias_prior_dist=bias_prior_dist,
         activation_function=F.elu,
         prior_mix=args.prior_mix,
         empirical_complexity_loss=args.empirical_complexity,

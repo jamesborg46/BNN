@@ -82,7 +82,7 @@ class DenseVariational(nn.Module):
 
         return batch_linear(input, self.weight, self.bias)
 
-    def empirical_complexity_loss(self, weight_prior_sigma, bias_prior_sigma):
+    def empirical_complexity_loss(self, weight_prior_dist, bias_prior_dist):
         # self.detached_weight = self.weight.detach().requires_grad_()
         # self.detached_bias = self.bias.detach().requires_grad_()
 
@@ -94,11 +94,11 @@ class DenseVariational(nn.Module):
                               .Normal(self.bias_mu, self.bias_sigma)
                               .log_prob(self.bias))
 
-        self.weight_prior = torch.distributions.Normal(0, weight_prior_sigma)
-        self.bias_prior = torch.distributions.Normal(0, bias_prior_sigma)
+        # self.weight_prior = torch.distributions.Normal(0, weight_prior_sigma)
+        # self.bias_prior = torch.distributions.Normal(0, bias_prior_sigma)
 
-        weight_prior_log_prob = self.weight_prior.log_prob(self.weight)
-        bias_prior_log_prob = self.bias_prior.log_prob(self.bias)
+        weight_prior_log_prob = weight_prior_dist.log_prob(self.weight)
+        bias_prior_log_prob = bias_prior_dist.log_prob(self.bias)
 
         empirical_complexity_loss = (
             torch.sum(weight_log_prob - weight_prior_log_prob, dim=[1,2]) +
@@ -108,7 +108,7 @@ class DenseVariational(nn.Module):
         return empirical_complexity_loss
 
     # def kl_loss(self, weight_prior_dist, bias_prior_dist, mu_excluded=False):
-    def kl_loss(self, weight_prior_sigma, bias_prior_sigma):
+    def kl_loss(self, weight_prior_dist, bias_prior_dist):
         weight_mu = self.weight_mu
         bias_mu = self.bias_mu
 
@@ -128,8 +128,8 @@ class DenseVariational(nn.Module):
 
         # return weight_kl_loss + bias_kl_loss
 
-        weight_prior_dist = torch.distributions.Normal(0, weight_prior_sigma)
-        bias_prior_dist = torch.distributions.Normal(0, bias_prior_sigma)
+        # weight_prior_dist = torch.distributions.Normal(0, weight_prior_sigma)
+        # bias_prior_dist = torch.distributions.Normal(0, bias_prior_sigma)
 
         return (torch.sum(torch.distributions.kl_divergence(self.weight_dist, weight_prior_dist)) +
                 torch.sum(torch.distributions.kl_divergence(self.bias_dist, bias_prior_dist)))
@@ -199,8 +199,8 @@ class DenseVariational(nn.Module):
 class BayesianNN(nn.Module):
 
     def __init__(self,
-                 weight_prior_sigma,
-                 bias_prior_sigma,
+                 weight_prior_dist,
+                 bias_prior_dist,
                  activation_function=None,
                  prior_mix=1,
                  empirical_complexity_loss=False,
@@ -210,29 +210,29 @@ class BayesianNN(nn.Module):
         self.empirical_complexity_loss_flag = empirical_complexity_loss
         self.explicit_gradient_flag = explicit_gradient
 
-        self.weight_prior_sigma = weight_prior_sigma
-        self.bias_prior_sigma = bias_prior_sigma
+        # self.weight_prior_dist = weight_prior_dist
+        # self.bias_prior_dist = bias_prior_dist
 
-#         self.pi = nn.Parameter(torch.tensor(prior_mix), requires_grad=False)
-#         prior_mix = torch.distributions.Categorical(
-#             probs=torch.tensor([self.pi, 1 - self.pi])
-#         )
+        self.pi = nn.Parameter(torch.tensor(prior_mix), requires_grad=False).to('cuda:0')
+        prior_mix = torch.distributions.Categorical(
+            probs=torch.tensor([self.pi, 1 - self.pi]).to('cuda:0')
+        )
 
-#         self.weight_prior_dist = torch.distributions.MixtureSameFamily(
-#             prior_mix,
-#             torch.distributions.Normal(0,
-#                                        torch.tensor([weight_prior_sigma,
-#                                                      0.00001])
-#                                        )
-#         )
+        self.weight_prior_dist = torch.distributions.MixtureSameFamily(
+            prior_mix,
+            torch.distributions.Normal(0,
+                                       torch.tensor([0.1,
+                                                     0.00001]).to('cuda:0')
+                                       )
+        )
 
-#         self.bias_prior_dist = torch.distributions.MixtureSameFamily(
-#             prior_mix,
-#             torch.distributions.Normal(0,
-#                                        torch.tensor([bias_prior_sigma,
-#                                                      0.00001])
-#                                        )
-#         )
+        self.bias_prior_dist = torch.distributions.MixtureSameFamily(
+            prior_mix,
+            torch.distributions.Normal(0,
+                                       torch.tensor([1,
+                                                     0.00001]).to('cuda:0')
+                                       )
+        )
 
         self.dense_variational_1 = DenseVariational(784,
                                                     1200,
@@ -269,16 +269,16 @@ class BayesianNN(nn.Module):
         empirical_complexity_loss = 0
         for child in self.children():
             empirical_complexity_loss += child.empirical_complexity_loss(
-                self.weight_prior_sigma,
-                self.bias_prior_sigma
+                self.weight_prior_dist,
+                self.bias_prior_dist
             )
         return empirical_complexity_loss
 
     def kl_loss(self):
         kl_loss = 0
         for child in self.children():
-            kl_loss += child.kl_loss(self.weight_prior_sigma,
-                                     self.bias_prior_sigma)
+            kl_loss += child.kl_loss(self.weight_prior_dist,
+                                     self.bias_prior_dist)
             # kl_loss += child.kl_loss(self.weight_prior_dist,
             #                          self.bias_prior_dist,
             #                          self.mu_excluded)

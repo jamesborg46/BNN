@@ -1,5 +1,5 @@
 python ./main.py \
-    --name EXPLICIT_GRADIENT_EMPIRICAL_COMPLEXITY \
+    --name MIX_PRIOR_TESTING_05 \
     --batch-size 128 \
     --test-batch-size 1000 \
     --epochs 1000 \
@@ -14,7 +14,7 @@ python ./main.py \
     --bias-mu-scale-init 0.001 \
     --bias-rho-mean-init -7.0 \
     --bias-rho-scale-init 0.001 \
-    --prior-mix 1.0 \
+    --prior-mix 0.5 \
     --weight-prior 0.1 \
     --bias-prior 1 \
     --samples 3 \
